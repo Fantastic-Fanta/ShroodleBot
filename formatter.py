@@ -860,3 +860,76 @@ class OutputStreamer:
         wait = 2.0 - (time.monotonic() - self._last_post)
         if wait > 0:
             await asyncio.sleep(wait)
+
+
+def _compact_live_line(line: str) -> str:
+    """Collapse a streamed line to a single short status line for the summary."""
+    formatted = format_live_line(line)
+    first = next((part for part in formatted.splitlines() if part.strip()), "")
+    return first.strip()[:180]
+
+
+class LiveSummaryEditor:
+    """No-thread live status: edit the command message in place with a minimal
+    running summary instead of posting new messages.
+
+    Used in DMs and any context where the app should not (or cannot) stream new
+    messages. Shares OutputStreamer's start/on_line/close interface so callers
+    can swap the two. The final completion view is written separately by the
+    caller, so close() just stops the loop.
+    """
+
+    def __init__(
+        self,
+        message: discord.Message,
+        job: ShroodlerJob,
+        *,
+        interval: float = 3.0,
+    ) -> None:
+        self._message = message
+        self._job = job
+        self._interval = max(1.0, interval)
+        self._latest = ""
+        self._dirty = False
+        self._closed = False
+        self._task: asyncio.Task[None] | None = None
+
+    def start(self) -> None:
+        self._task = asyncio.create_task(self._run(), name="shroodler-live-summary")
+
+    async def on_line(self, line: str) -> None:
+        if self._closed or not should_forward_line(line):
+            return
+        compact = _compact_live_line(line)
+        if compact:
+            self._latest = compact
+            self._dirty = True
+
+    async def _run(self) -> None:
+        try:
+            while not self._closed:
+                await asyncio.sleep(self._interval)
+                if self._dirty and not self._closed:
+                    self._dirty = False
+                    await self._push()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Live summary editor crashed")
+
+    async def _push(self) -> None:
+        findings = len(self._job.findings)
+        head = f"{findings} finding{'' if findings == 1 else 's'} so far"
+        preview = f"{head}\n{self._latest}" if self._latest else head
+        await edit_view(self._message, running_view(self._job, preview=preview))
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
