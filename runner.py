@@ -179,6 +179,9 @@ class ShroodlerJob:
 
 
 _PROFILE_ITERATIONS = {"safe": 5, "balanced": 10, "aggressive": 20}
+# robots.txt handling scales with the profile: safe honors Disallow, balanced
+# crawls through it, aggressive harvests Disallow paths as recon leads.
+_PROFILE_ROBOTS = {"safe": "respect", "balanced": "ignore", "aggressive": "harvest"}
 
 
 def _agent_command(job: ShroodlerJob) -> list[str]:
@@ -197,7 +200,8 @@ def _agent_command(job: ShroodlerJob) -> list[str]:
         str(max_iter),
         "--run-probes",
         "--llm-business-logic",
-        "--ignore-robots",
+        "--robots",
+        _PROFILE_ROBOTS.get(job.profile, "ignore"),
     ]
     if job.profile != "aggressive":
         cmd.append("--no-time-sqli")
