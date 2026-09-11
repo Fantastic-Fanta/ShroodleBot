@@ -201,9 +201,15 @@ def _agent_command(job: ShroodlerJob) -> list[str]:
     ]
     if job.profile != "aggressive":
         cmd.append("--no-time-sqli")
+    else:
+        cmd.append("--aggressive")
     cmd += ["--llm-provider", cfg.llm_provider]
     if cfg.llm_model:
         cmd += ["--llm-model", cfg.llm_model]
+    if getattr(cfg, "llm_agent", False):
+        # Drive the scan with the LLM agent loop so its per-iteration
+        # reasoning streams to the Discord thread.
+        cmd.append("--llm-agent")
     if "--allow-external" not in extra:
         cmd.append("--allow-external")
     if job.login_recipe is not None:

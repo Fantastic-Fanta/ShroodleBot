@@ -158,12 +158,12 @@ def sanitize_hostname(hostname: str) -> str:
 
 def build_thread_name(hostname: str) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-    name = f"Pentest: {hostname} — {timestamp}"
+    name = f"Pentest: {hostname} - {timestamp}"
     if len(name) <= 100:
         return name
-    reserved = len(f"Pentest:  — {timestamp}")
+    reserved = len(f"Pentest:  - {timestamp}")
     clipped = hostname[: max(1, 100 - reserved)]
-    return f"Pentest: {clipped} — {timestamp}"[:100]
+    return f"Pentest: {clipped} - {timestamp}"[:100]
 
 
 def format_duration(started_at: datetime, ended_at: datetime | None = None) -> str:
@@ -243,6 +243,52 @@ def _live_url_lines(urls: list[Any], *, skip: set[str] | None = None) -> list[st
 
 
 def format_live_line(line: str) -> str:
+    """Format a streamed line for Discord, surfacing the LLM's reasoning and
+    warnings (fallbacks, verification) so the thread shows the agent reasoning
+    its way through the target."""
+    data = parse_agent_line(line)
+    if data is None:
+        warn = _format_warning_line(line)
+        if warn is not None:
+            return warn
+        return _format_live_line_base(line)
+    if data.get("action") == "llm-verify":
+        warn = _format_warning_line(line)
+        if warn is not None:
+            return warn
+    base = _format_live_line_base(line)
+    reasoning = str(data.get("reasoning") or "").strip()
+    if reasoning:
+        base = f"{base}\n> reason: {reasoning[:400]}"
+    return base
+
+
+def _format_warning_line(line: str) -> str | None:
+    """Surface fallback / verify / warning JSON lines for debug visibility."""
+    stripped = line.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return None
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    warn = data.get("warning")
+    if warn == "llm-agent-fallback":
+        return f"fallback: {data.get('reason', '')[:200]}"
+    if warn:
+        return f"{warn}: {str(data.get('reason', ''))[:200]}"
+    if data.get("action") == "llm-verify" and isinstance(data.get("result"), dict):
+        r = data["result"]
+        return (
+            f"verified {r.get('verified', 0)} findings, "
+            f"{r.get('confirmed', 0)} confirmed, {r.get('removed', 0)} dropped"
+        )
+    return None
+
+
+def _format_live_line_base(line: str) -> str:
     data = parse_agent_line(line)
     if data is None:
         parsed = parse_finding_line(line)
@@ -319,6 +365,8 @@ def format_live_line(line: str) -> str:
 
 def should_forward_line(line: str) -> bool:
     if parse_agent_line(line) is not None:
+        return True
+    if _format_warning_line(line) is not None:
         return True
     lower = line.lower()
     stripped = line.lstrip()

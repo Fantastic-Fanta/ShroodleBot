@@ -20,6 +20,7 @@ class Config:
     sessions_dir: Path
     llm_provider: str   # "anthropic" | "deepseek"
     llm_model: str      # empty = provider default
+    llm_agent: bool     # drive scans with the LLM agent loop (streams reasoning)
 
 
 _config: Config | None = None
@@ -86,6 +87,7 @@ def load() -> Config:
         sessions_dir=sessions_dir,
         llm_provider=llm_provider,
         llm_model=os.getenv("LLM_MODEL", "").strip(),
+        llm_agent=os.getenv("LLM_AGENT", "true").strip().lower() not in ("false", "0", "no", "off"),
     )
     if cfg.max_concurrent_scans < 1:
         raise SystemExit("MAX_CONCURRENT_SCANS must be >= 1")
