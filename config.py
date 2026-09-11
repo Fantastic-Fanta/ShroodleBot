@@ -11,7 +11,8 @@ from dotenv import load_dotenv
 @dataclass(frozen=True)
 class Config:
     discord_token: str
-    discord_guild_id: int
+    discord_guild_id: int  # 0 = no home guild (user-installed app only)
+    authorized_user_ids: frozenset[int]  # allowlist for DM / user-install use
     shroodler_bin: str
     shroodler_extra_flags: str
     max_concurrent_scans: int
@@ -51,6 +52,22 @@ def _optional_int(name: str, default: int) -> int:
         raise SystemExit(f"{name} must be an integer, got {raw!r}") from None
 
 
+def _id_set(name: str) -> frozenset[int]:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return frozenset()
+    ids: set[int] = set()
+    for part in raw.replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.add(int(part))
+        except ValueError:
+            raise SystemExit(f"{name} must be comma-separated integers, got {part!r}") from None
+    return frozenset(ids)
+
+
 def resolve_shroodler_bin(configured: str) -> str:
     """Locate the shroodler executable, including ~/.local/bin if it is not on PATH."""
     found = shutil.which(configured)
@@ -78,7 +95,8 @@ def load() -> Config:
         raise SystemExit(f"LLM_PROVIDER must be 'anthropic' or 'deepseek', got {llm_provider!r}")
     cfg = Config(
         discord_token=_require("DISCORD_TOKEN"),
-        discord_guild_id=_require_int("DISCORD_GUILD_ID"),
+        discord_guild_id=_optional_int("DISCORD_GUILD_ID", 0),
+        authorized_user_ids=_id_set("AUTHORIZED_USER_IDS"),
         shroodler_bin=resolve_shroodler_bin(raw_bin),
         shroodler_extra_flags=os.getenv("SHROODLER_EXTRA_FLAGS", "").strip(),
         max_concurrent_scans=_optional_int("MAX_CONCURRENT_SCANS", 2),
@@ -89,6 +107,12 @@ def load() -> Config:
         llm_model=os.getenv("LLM_MODEL", "").strip(),
         llm_agent=os.getenv("LLM_AGENT", "true").strip().lower() not in ("false", "0", "no", "off"),
     )
+    if not cfg.discord_guild_id and not cfg.authorized_user_ids:
+        raise SystemExit(
+            "Set DISCORD_GUILD_ID (server members are authorized) and/or "
+            "AUTHORIZED_USER_IDS (comma-separated user IDs for DM / user-install "
+            "use). At least one is required so the scanner is not open to anyone."
+        )
     if cfg.max_concurrent_scans < 1:
         raise SystemExit("MAX_CONCURRENT_SCANS must be >= 1")
     if cfg.scan_timeout_seconds < 1:

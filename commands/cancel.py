@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from commands import in_home_guild
+from commands import is_authorized
 from formatter import edit_job_message, message_view, respond_view, send_view
 from runner import ShroodlerJob, cancel as cancel_job
 
@@ -22,7 +22,7 @@ class CancelCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="cancel", description="Cancel a running Shroodler scan by job ID")
-    @app_commands.allowed_installs(guilds=True, users=False)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(job_id="Job ID shown when the scan started")
     async def cancel(self, interaction: discord.Interaction, job_id: str) -> None:
@@ -36,10 +36,10 @@ class CancelCog(commands.Cog):
             )
             return
 
-        allowed = await in_home_guild(
+        allowed = await is_authorized(
             interaction.user,
             client=self.bot,
-            guild_id=self.bot.config.discord_guild_id,
+            config=self.bot.config,
             interaction_guild_id=interaction.guild_id,
         )
         if not allowed:

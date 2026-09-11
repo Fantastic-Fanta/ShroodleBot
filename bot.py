@@ -45,17 +45,21 @@ class ShroodleBot(commands.Bot):
         await self.add_cog(PentestCog(self))
         await self.add_cog(StatusCog(self))
         await self.add_cog(CancelCog(self))
-        guild = discord.Object(id=self.config.discord_guild_id)
-        # Guild + global copies of the same slash commands show up twice.
-        # Keep one global set (guilds and DMs) and delete leftover guild copies.
-        self.tree.clear_commands(guild=guild)
-        await self.tree.sync(guild=guild)
+        # Guild + global copies of the same slash commands show up twice. Keep
+        # one global set (servers, DMs, and user installs) and delete leftover
+        # guild copies. Skip the guild step entirely when no home guild is set
+        # (pure user-installed app).
+        if self.config.discord_guild_id:
+            guild = discord.Object(id=self.config.discord_guild_id)
+            self.tree.clear_commands(guild=guild)
+            await self.tree.sync(guild=guild)
         synced = await self.tree.sync()
         self.tree.error(self._on_tree_error)
         logger.info(
-            "Removed guild-scoped slash commands; synced %s global commands for guild %s and DMs",
+            "Synced %s global command(s) for servers, DMs, and user installs "
+            "(home guild: %s)",
             len(synced),
-            self.config.discord_guild_id,
+            self.config.discord_guild_id or "none",
         )
 
     async def on_ready(self) -> None:

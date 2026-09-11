@@ -22,11 +22,23 @@ Shroodler itself may need API keys or other environment variables; those should 
 1. Open the [Discord Developer Portal](https://discord.com/developers/applications) and create an application.
 2. Open **Bot**, click **Reset Token** / **Copy**, and save the token as `DISCORD_TOKEN`.
 3. Under **Privileged Gateway Intents**, enable **Message Content Intent**.
-4. Open **OAuth2 → URL Generator**. Select scopes `bot` and `applications.commands`. Grant permissions to send messages, send messages in threads, create public threads, attach files, and embed links.
-5. Invite the bot to your server with the generated URL.
-6. Enable Developer Mode in Discord (User Settings → Advanced), then copy the Server ID → `DISCORD_GUILD_ID`.
+4. Open **Installation**. Under **Installation Contexts** enable **User Install** (and **Guild Install** if you also want to add it to servers). This is what makes it work as a personal app you can use in any DM.
+5. Still under **Installation**, set the default install settings: for **Guild Install** use scopes `bot` + `applications.commands` with permissions to send messages, send messages in threads, create public threads, attach files, and embed links; for **User Install** use scope `applications.commands`. Use the generated install link to add the app to your account and/or a server.
+6. Under **Bot → Privileged Gateway Intents**, enable **Message Content Intent**.
+7. (Optional) Enable Developer Mode in Discord (User Settings → Advanced) to copy IDs. Copy your server ID → `DISCORD_GUILD_ID` and/or your user ID(s) → `AUTHORIZED_USER_IDS`.
 
-Slash commands are registered globally at startup so `/pentest`, `/status`, and `/cancel` work in the guild and in DMs. Discord can take a few minutes to refresh the picker after a restart.
+### Authorization
+
+Scans are gated so the bot is never open to anyone:
+
+- **`DISCORD_GUILD_ID`** — members of this server are authorized (works in the server and in their DMs).
+- **`AUTHORIZED_USER_IDS`** — comma-separated user IDs authorized anywhere the app is installed. Use this for a user-installed app that has no shared server.
+
+Set at least one; the bot refuses to start with neither.
+
+Slash commands are registered globally at startup, so `/pentest`, `/status`, and `/cancel` work in servers, in DMs, and as a user-installed app. Discord can take a few minutes to refresh the picker after a restart.
+
+**User-install limitation:** a user-installed app can only stream its live output where it can post freely — its **DMs** and servers where the bot itself is a member. In a server where it is only user-installed (not added as a bot), Discord restricts it to short-lived interaction replies, so long scans should be run from a DM or from a server the bot has been added to.
 
 ## Setup
 
@@ -61,7 +73,7 @@ If the binary is missing, `/pentest` replies that Shroodler is not installed.
 
 Live findings, `/status`, and the final summary use Discord Components V2 (not embeds). `/pentest` is a single message that evolves in place: running, then the finished summary with the markdown report and full debug log attached. In guild text channels the bot also opens a thread on that message for the verbose live log. In DMs (and if thread creation fails) there is no thread; the original message stays the live status and shows a short recent-output preview while the scan runs. Failed, cancelled, and timed-out scans edit that same message to an error/cancelled summary instead of posting a new channel dump.
 
-Slash commands are registered globally so they work in the guild and in DMs. Global command updates can take a few minutes to appear. DMs from server members must be allowed for the bot user. Commands are limited to members of `DISCORD_GUILD_ID`, including when used in a DM.
+Slash commands are registered globally so they work in servers, in DMs, and as a user-installed app. Global command updates can take a few minutes to appear. Commands are limited to members of `DISCORD_GUILD_ID` and/or the IDs in `AUTHORIZED_USER_IDS`, including when used in a DM.
 
 ## Authenticated scans
 
