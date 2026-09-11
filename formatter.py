@@ -674,24 +674,39 @@ async def edit_view(
         kwargs["allowed_mentions"] = allowed_mentions
     try:
         return await message.edit(**kwargs)
-    except discord.HTTPException:
-        logger.exception("Discord edit failed")
+    except discord.HTTPException as exc:
+        # A user-install/DM message can no longer be edited once the interaction
+        # webhook token expires (~15 min); log quietly rather than as a crash.
+        logger.warning("Discord edit failed: %s", exc)
         return None
-    except discord.ClientException:
-        logger.exception("Discord client error while editing")
+    except discord.ClientException as exc:
+        logger.warning("Discord client error while editing: %s", exc)
         return None
 
 
 async def durable_message(message: discord.Message) -> discord.Message:
-    """Re-fetch so later edits use the bot token, not a 15-minute interaction webhook."""
+    """Re-fetch so later edits use the bot token, not a 15-minute interaction webhook.
+
+    In user-installed / DM contexts the bot has no channel access, so the
+    re-fetch is Forbidden and we keep the interaction message (edits then go via
+    the interaction webhook, valid for ~15 minutes). That is expected, not an
+    error, so it is logged quietly.
+    """
     channel = message.channel
     fetch = getattr(channel, "fetch_message", None)
     if fetch is None:
         return message
     try:
         return await fetch(message.id)
-    except discord.HTTPException:
-        logger.exception("Failed to re-fetch command message %s", message.id)
+    except discord.Forbidden:
+        logger.debug(
+            "No channel access to re-fetch message %s (user-install/DM); "
+            "editing via the interaction webhook instead.",
+            message.id,
+        )
+        return message
+    except discord.HTTPException as exc:
+        logger.warning("Failed to re-fetch command message %s: %s", message.id, exc)
         return message
 
 
@@ -702,16 +717,22 @@ async def fetch_job_message(client: discord.Client, job: ShroodlerJob) -> discor
     if channel is None:
         try:
             channel = await client.fetch_channel(job.channel_id)
-        except discord.HTTPException:
-            logger.exception("Failed to fetch channel for job %s", job.job_id)
+        except discord.Forbidden:
+            logger.debug("No channel access for job %s (user-install/DM)", job.job_id)
+            return None
+        except discord.HTTPException as exc:
+            logger.warning("Failed to fetch channel for job %s: %s", job.job_id, exc)
             return None
     fetch = getattr(channel, "fetch_message", None)
     if fetch is None:
         return None
     try:
         return await fetch(job.message_id)
-    except discord.HTTPException:
-        logger.exception("Failed to fetch command message for job %s", job.job_id)
+    except discord.Forbidden:
+        logger.debug("No access to re-fetch command message for job %s", job.job_id)
+        return None
+    except discord.HTTPException as exc:
+        logger.warning("Failed to fetch command message for job %s: %s", job.job_id, exc)
         return None
 
 
@@ -921,11 +942,14 @@ class LiveSummaryEditor:
         findings = len(self._job.findings)
         head = f"{findings} finding{'' if findings == 1 else 's'} so far"
         preview = f"{head}\n{self._latest}" if self._latest else head
-        await edit_view(self._message, running_view(self._job, preview=preview))
+        edited = await edit_view(self._message, running_view(self._job, preview=preview))
+        if edited is None:
+            # The message can no longer be edited (e.g. the interaction webhook
+            # expired after ~15 min in a user-install/DM). Stop pushing; the
+            # scan keeps running and the report is still saved locally.
+            self._closed = True
 
     async def close(self) -> None:
-        if self._closed:
-            return
         self._closed = True
         if self._task is not None:
             self._task.cancel()
@@ -933,3 +957,4 @@ class LiveSummaryEditor:
                 await self._task
             except asyncio.CancelledError:
                 pass
+            self._task = None
