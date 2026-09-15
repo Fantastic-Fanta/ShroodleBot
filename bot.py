@@ -13,6 +13,7 @@ from discord.ext import commands
 
 from commands.cancel import CancelCog
 from commands.pentest import PentestCog
+from commands.sherlock import SherlockCog
 from commands.status import StatusCog
 from config import Config, load as load_config
 from job_store import JobStore
@@ -39,10 +40,20 @@ class ShroodleBot(commands.Bot):
         else:
             self.shroodler_path = None
         self.shroodler_available = self.shroodler_path is not None
+        sherlock_resolved = Path(config.sherlock_bin)
+        sherlock_which = shutil.which(config.sherlock_bin)
+        if sherlock_which:
+            self.sherlock_path = sherlock_which
+        elif sherlock_resolved.is_file() and os.access(sherlock_resolved, os.X_OK):
+            self.sherlock_path = str(sherlock_resolved)
+        else:
+            self.sherlock_path = None
+        self.sherlock_available = self.sherlock_path is not None
         self._shutting_down = False
 
     async def setup_hook(self) -> None:
         await self.add_cog(PentestCog(self))
+        await self.add_cog(SherlockCog(self))
         await self.add_cog(StatusCog(self))
         await self.add_cog(CancelCog(self))
         # Guild + global copies of the same slash commands show up twice. Keep
@@ -70,6 +81,11 @@ class ShroodleBot(commands.Bot):
             logger.warning(
                 "shroodler binary %r not found on PATH; /pentest is disabled",
                 self.config.shroodler_bin,
+            )
+        if not self.sherlock_available:
+            logger.warning(
+                "sherlock binary %r not found on PATH; /sherlock is disabled",
+                self.config.sherlock_bin,
             )
 
     async def _on_tree_error(

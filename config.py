@@ -15,6 +15,9 @@ class Config:
     authorized_user_ids: frozenset[int]  # allowlist for DM / user-install use
     shroodler_bin: str
     shroodler_extra_flags: str
+    sherlock_bin: str
+    sherlock_extra_flags: str
+    sherlock_timeout_seconds: int
     max_concurrent_scans: int
     scan_timeout_seconds: int
     report_dir: Path
@@ -68,8 +71,8 @@ def _id_set(name: str) -> frozenset[int]:
     return frozenset(ids)
 
 
-def resolve_shroodler_bin(configured: str) -> str:
-    """Locate the shroodler executable, including ~/.local/bin if it is not on PATH."""
+def resolve_binary(configured: str) -> str:
+    """Locate an executable, including ~/.local/bin if it is not on PATH."""
     found = shutil.which(configured)
     if found:
         return found
@@ -82,6 +85,10 @@ def resolve_shroodler_bin(configured: str) -> str:
     return configured
 
 
+# Backwards-compatible alias.
+resolve_shroodler_bin = resolve_binary
+
+
 def load() -> Config:
     global _config
     load_dotenv()
@@ -90,6 +97,7 @@ def load() -> Config:
     sessions_raw = os.getenv("SESSIONS_DIR", "").strip()
     sessions_dir = Path(sessions_raw).expanduser() if sessions_raw else Path.home() / ".shroodler" / "bot-sessions"
     raw_bin = os.getenv("SHROODLER_BIN", "shroodler").strip() or "shroodler"
+    raw_sherlock_bin = os.getenv("SHERLOCK_BIN", "sherlock").strip() or "sherlock"
     llm_provider = os.getenv("LLM_PROVIDER", "anthropic").strip().lower() or "anthropic"
     if llm_provider not in ("anthropic", "deepseek"):
         raise SystemExit(f"LLM_PROVIDER must be 'anthropic' or 'deepseek', got {llm_provider!r}")
@@ -97,8 +105,11 @@ def load() -> Config:
         discord_token=_require("DISCORD_TOKEN"),
         discord_guild_id=_optional_int("DISCORD_GUILD_ID", 0),
         authorized_user_ids=_id_set("AUTHORIZED_USER_IDS"),
-        shroodler_bin=resolve_shroodler_bin(raw_bin),
+        shroodler_bin=resolve_binary(raw_bin),
         shroodler_extra_flags=os.getenv("SHROODLER_EXTRA_FLAGS", "").strip(),
+        sherlock_bin=resolve_binary(raw_sherlock_bin),
+        sherlock_extra_flags=os.getenv("SHERLOCK_EXTRA_FLAGS", "").strip(),
+        sherlock_timeout_seconds=_optional_int("SHERLOCK_TIMEOUT_SECONDS", 300),
         max_concurrent_scans=_optional_int("MAX_CONCURRENT_SCANS", 2),
         scan_timeout_seconds=_optional_int("SCAN_TIMEOUT_SECONDS", 1800),
         report_dir=report_dir,
@@ -117,6 +128,8 @@ def load() -> Config:
         raise SystemExit("MAX_CONCURRENT_SCANS must be >= 1")
     if cfg.scan_timeout_seconds < 1:
         raise SystemExit("SCAN_TIMEOUT_SECONDS must be >= 1")
+    if cfg.sherlock_timeout_seconds < 1:
+        raise SystemExit("SHERLOCK_TIMEOUT_SECONDS must be >= 1")
     report_dir.mkdir(parents=True, exist_ok=True)
     sessions_dir.mkdir(parents=True, exist_ok=True)
     _config = cfg

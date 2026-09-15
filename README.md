@@ -36,7 +36,7 @@ Scans are gated so the bot is never open to anyone:
 
 Set at least one; the bot refuses to start with neither.
 
-Slash commands are registered globally at startup, so `/pentest`, `/status`, and `/cancel` work in servers, in DMs, and as a user-installed app. Discord can take a few minutes to refresh the picker after a restart.
+Slash commands are registered globally at startup, so `/pentest`, `/sherlock`, `/status`, and `/cancel` work in servers, in DMs, and as a user-installed app. Discord can take a few minutes to refresh the picker after a restart.
 
 **User-install limitation:** a user-installed app can only stream its live output where it can post freely — its **DMs** and servers where the bot itself is a member. In a server where it is only user-installed (not added as a bot), Discord restricts it to short-lived interaction replies, so long scans should be run from a DM or from a server the bot has been added to.
 
@@ -64,10 +64,19 @@ If the binary is missing, `/pentest` replies that Shroodler is not installed.
 | Command | Who | What |
 | --- | --- | --- |
 | `/pentest <target> [profile] [session]` | Home server members | Run `shroodler agent` immediately
+| `/sherlock <usernames>` | Home server members | Hunt username(s) across social networks with Sherlock |
 | `/status` | Home server members | Private list of running scans |
 | `/cancel <job_id>` | Home server members | SIGTERM the subprocess (SIGKILL after 5s) |
 
 `profile` is `safe`, `balanced` (default), or `aggressive`.
+
+`/sherlock` accepts one or more usernames separated by spaces or commas (up to
+5 per invocation). Each username is looked up in turn and the message updates in
+place with the accounts found; when a username has more than a handful of hits,
+the full list is attached as a text file. It requires [Sherlock](https://github.com/sherlock-project/sherlock)
+installed and on `PATH` (or `SHERLOCK_BIN`); if it is missing, `/sherlock`
+replies that Sherlock is not installed. Per-username runtime is bounded by
+`SHERLOCK_TIMEOUT_SECONDS` (default 300s).
 
 `target` must be `http://` or `https://` with a real hostname. Localhost, loopback, RFC1918, link-local, `.local` / `.localhost` / `.internal`, and userinfo tricks are rejected.
 
